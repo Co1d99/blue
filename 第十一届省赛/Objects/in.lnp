@@ -1,0 +1,4 @@
+".\Objects\in.obj",
+".\Objects\iic.obj" 
+TO ".\Objects\in" 
+PRINT(".\Listings\in.m51") RAMSIZE(256) 
