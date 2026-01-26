@@ -1,0 +1,5 @@
+".\Objects\2104010117.obj",
+".\Objects\iic.obj" 
+TO ".\Objects\in" 
+PRINT(".\Listings\in.m51") RAMSIZE(256) 
+DISABLEWARNING (16) 

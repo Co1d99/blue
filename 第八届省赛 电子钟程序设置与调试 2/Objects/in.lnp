@@ -1,0 +1,5 @@
+".\Objects\in.obj",
+".\Objects\ds1302.obj",
+".\Objects\onewire.obj" 
+TO ".\Objects\in" 
+PRINT(".\Listings\in.m51") RAMSIZE(256) 

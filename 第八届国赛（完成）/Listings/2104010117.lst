@@ -1,0 +1,343 @@
+C51 COMPILER V9.54   2104010117                                                            06/04/2023 21:52:25 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE 2104010117
+OBJECT MODULE PLACED IN .\Objects\2104010117.obj
+COMPILER INVOKED BY: F:\kile 5\C51\BIN\C51.EXE 2104010117.c OPTIMIZE(8,SPEED) BROWSE INCDIR(.\lib) DEBUG OBJECTEXTEND PR
+                    -INT(.\Listings\2104010117.lst) TABS(2) OBJECT(.\Objects\2104010117.obj)
+
+line level    source
+
+   1          #include <STC15F2K60S2.H>
+   2          #include "intrins.h"
+   3          #include "iic.h"
+   4          
+   5          #define YY P2=(P2&0x1f)
+   6          #define Y4 YY|0x80
+   7          #define Y5 YY|0xa0
+   8          #define Y6 YY|0xc0
+   9          #define Y7 YY|0xe0
+  10          
+  11          typedef unsigned char u8;
+  12          typedef unsigned int  u16;
+  13          
+  14          #define SYS P0=0x00;Y5;YY;P0=0xff;Y4;YY;
+  15          
+  16          u8  Time10ms,LED_V=0xff;
+  17          char CS=0;
+  18          u16 Time1S,distance,Time100ms,old_distance;
+  19          u16  old_distance2[4];
+  20          //                                                                    10    11c  12f  
+  21          code u8 LED_duan[]={0xc0,0xf9,0xa4,0xb0,0x99,0x92,0x82,0xf8,0x80,0x90,0xff,0xc6,0x8e};
+  22          u8 LED_buff[]={10,10,10,10,10,10,10,10};
+  23          
+  24          void LED(){P0=LED_V;Y4;YY;}
+  25          
+  26          void Timer1_Init(void)    //1毫秒@12.000MHz
+  27          {
+  28   1        AUXR &= 0xBF;     //定时器时钟12T模式
+  29   1        TMOD &= 0x0F;     //设置定时器模式
+  30   1      
+  31   1        TL1 = 0x18;       //设置定时初始值
+  32   1        TH1 = 0xFC;       //设置定时初始值
+  33   1      
+  34   1        TF1 = 0;        //清除TF1标志
+  35   1        TR1 = 1;        //定时器1开始计时
+  36   1        ET1 = 1;        //使能定时器1中断
+  37   1      }
+  38          
+  39          
+  40          void LED_display()
+  41          {
+  42   1        static u8 i=0;
+  43   1        P0=0xff;Y7;YY;
+  44   1        P0=0x01<<i;Y6;YY;
+  45   1        P0=LED_duan[LED_buff[i]];Y7;YY;
+  46   1        if(++i==8)i=0;
+  47   1      }
+  48          
+  49          void LED_displaybuff(u8 d1,d2,d3,d4,d5,d6,d7,d8)
+  50          {
+  51   1        LED_buff[0]=d1;
+  52   1        LED_buff[1]=d2;
+  53   1        LED_buff[2]=d3;
+  54   1        LED_buff[3]=d4;
+C51 COMPILER V9.54   2104010117                                                            06/04/2023 21:52:25 PAGE 2   
+
+  55   1        LED_buff[4]=d5;
+  56   1        LED_buff[5]=d6;
+  57   1        LED_buff[6]=d7;
+  58   1        LED_buff[7]=d8;
+  59   1      }
+  60          
+  61          void DAC(u8 dat)
+  62          {
+  63   1        float date=0;
+  64   1        date=dat/5.0*255;
+  65   1        if(date>255)date=255;
+  66   1        I2CStart();
+  67   1        I2CSendByte(0x90);
+  68   1        I2CWaitAck();
+  69   1        I2CSendByte(0x40);
+  70   1        I2CWaitAck();
+  71   1        I2CSendByte(date);
+  72   1        I2CWaitAck();
+  73   1        I2CStop();
+  74   1      }
+  75          
+  76          u8 EEPROM;
+  77          void EEPROM_R(u8 addr)
+  78          {
+  79   1        I2CStart();
+  80   1        I2CSendByte(0xa0);
+  81   1        I2CWaitAck();
+  82   1        I2CSendByte(addr);
+  83   1        I2CWaitAck();
+  84   1      
+  85   1        I2CStart();
+  86   1        I2CSendByte(0xa1);
+  87   1        I2CWaitAck();
+  88   1        EEPROM=I2CReceiveByte();
+  89   1        I2CSendAck(1);
+  90   1        I2CStop();
+  91   1      }
+  92          
+  93          void EEPROM_W(u8 addr,dat)
+  94          {
+  95   1        I2CStart();
+  96   1        I2CSendByte(0xa0);
+  97   1        I2CWaitAck();
+  98   1        I2CSendByte(addr);
+  99   1        I2CWaitAck();
+ 100   1        I2CSendByte(dat);
+ 101   1        I2CWaitAck();
+ 102   1        I2CStop();
+ 103   1      }
+ 104          
+ 105          void Delay13us()    //@12.000MHz
+ 106          {
+ 107   1        unsigned char i;
+ 108   1      
+ 109   1        _nop_();
+ 110   1        _nop_();
+ 111   1        i = 36;
+ 112   1        while (--i);
+ 113   1      }
+ 114          
+ 115          
+ 116          
+C51 COMPILER V9.54   2104010117                                                            06/04/2023 21:52:25 PAGE 3   
+
+ 117          u16 PACSonic()
+ 118          {
+ 119   1        int distance=-1;
+ 120   1        u16 Time=0;
+ 121   1        CMOD&=0x00;
+ 122   1        CH=0x3C;
+ 123   1        CL=0xB0;
+ 124   1        CF=0;
+ 125   1      
+ 126   1        P10=1;Delay13us();P10=0;Delay13us();
+ 127   1        P10=1;Delay13us();P10=0;Delay13us();
+ 128   1        P10=1;Delay13us();P10=0;Delay13us();
+ 129   1        P10=1;Delay13us();P10=0;Delay13us();
+ 130   1        P10=1;Delay13us();P10=0;Delay13us();
+ 131   1        P10=1;Delay13us();P10=0;Delay13us();
+ 132   1        P10=1;Delay13us();P10=0;Delay13us();
+ 133   1        P10=1;Delay13us();P10=0;Delay13us();
+ 134   1        
+ 135   1        CR=1;
+ 136   1        while((P11==1)&&(CF==0));
+ 137   1        CR=0;
+ 138   1        
+ 139   1        if(CF==0)
+ 140   1        {
+ 141   2          Time=CL|(CH<<8)-15535;
+ 142   2          distance=(Time*0.17F);
+ 143   2          distance=distance%10000/10;
+ 144   2        }
+ 145   1        return distance;
+ 146   1        
+ 147   1      }
+ 148          
+ 149          u8 key_value,key_state,distance_flag,key_flag;
+ 150          void key_scan()
+ 151          {
+ 152   1        P3|=0x0f;
+ 153   1        if(~P3&0x0f)
+ 154   1        {
+ 155   2          if(key_state<255)key_state++;
+ 156   2          if(P30==0)key_value=7;
+ 157   2          if(P31==0)key_value=6;
+ 158   2          if(P32==0)key_value=5;
+ 159   2          if(P33==0)key_value=4;
+ 160   2        }
+ 161   1        else
+ 162   1        {
+ 163   2          key_value=0;
+ 164   2          key_state=0;
+ 165   2        }
+ 166   1      }
+ 167          
+ 168          u8 FY_flag,CS_flag;
+ 169          void key_disposs()
+ 170          {
+ 171   1        Time10ms=0;
+ 172   1        key_scan();
+ 173   1        if(key_value==4&&key_state==5)
+ 174   1        {
+ 175   2          distance_flag=1;
+ 176   2          key_flag=0;;
+ 177   2        }
+ 178   1        if(key_value==5&&key_state==5)
+C51 COMPILER V9.54   2104010117                                                            06/04/2023 21:52:25 PAGE 4   
+
+ 179   1        {
+ 180   2          key_flag=!key_flag;
+ 181   2        }
+ 182   1        if(key_value==6&&key_state==5)
+ 183   1        {
+ 184   2          if(++CS_flag==3)CS_flag=1;
+ 185   2          if(CS_flag==1){key_flag=2;}
+ 186   2          if(CS_flag==2){key_flag=0;}
+ 187   2          
+ 188   2        }
+ 189   1        
+ 190   1        
+ 191   1        if(key_value==7&&key_state==5&&key_flag==1)
+ 192   1        {
+ 193   2          if(++FY_flag==4)FY_flag=0;
+ 194   2        }
+ 195   1        if(key_value==7&&key_state==5&&key_flag==2)
+ 196   1        {
+ 197   2          CS+=10;
+ 198   2          if(CS>30){CS=0;}
+ 199   2          if(CS<0){CS=30;}
+ 200   2        }
+ 201   1        
+ 202   1      }
+ 203          
+ 204          void JM_QH()
+ 205          {
+ 206   1        switch(key_flag)
+ 207   1        {
+ 208   2          case 0:
+ 209   2            LED_displaybuff(11,10,distance/100,distance/10%10,distance%10,old_distance/100,old_distance/10%10,old_d
+             -istance%10);
+ 210   2          break;
+ 211   2          case 1:
+ 212   2            switch(FY_flag)
+ 213   2            {
+ 214   3              case 0:
+ 215   3                LED_displaybuff(2,10,10,10,10,old_distance2[0]/100,old_distance2[0]/10%10,old_distance2[0]%10);
+ 216   3              break;
+ 217   3              case 1:
+ 218   3                LED_displaybuff(2,10,10,10,10,old_distance2[1]/100,old_distance2[1]/10%10,old_distance2[1]%10);
+ 219   3              break;
+ 220   3              case 2:
+ 221   3                LED_displaybuff(2,10,10,10,10,old_distance2[2]/100,old_distance2[2]/10%10,old_distance2[2]%10);
+ 222   3              break;
+ 223   3              case 3:
+ 224   3                LED_displaybuff(2,10,10,10,10,old_distance2[3]/100,old_distance2[3]/10%10,old_distance2[3]%10);
+ 225   3              break;
+ 226   3            }
+ 227   2              break;
+ 228   2          case 2:
+ 229   2            LED_displaybuff(12,10,10,10,10,10,CS/10,CS%10);
+ 230   2          break;
+ 231   2        }
+ 232   1      }
+ 233          u8 CL_falg,i=0,LED_flag;
+ 234          void LED_XS()
+ 235          {
+ 236   1        if(CL_falg==1)
+ 237   1        {
+ 238   2          Time1S=0;
+ 239   2          CL_falg=0;
+C51 COMPILER V9.54   2104010117                                                            06/04/2023 21:52:25 PAGE 5   
+
+ 240   2            if(LED_flag==0)
+ 241   2            {
+ 242   3              LED_V&=0xfe;
+ 243   3            }
+ 244   2            else
+ 245   2            {
+ 246   3              LED_V|=0x01;
+ 247   3            }
+ 248   2            if(++i<4){CL_falg=1;}
+ 249   2        }
+ 250   1        if(key_flag==2)LED_V&=0xbf;else LED_V|=~0xbf;
+ 251   1        if(key_flag==1)LED_V&=0x7f;else LED_V|=~0x7f;
+ 252   1        
+ 253   1        
+ 254   1      }
+ 255          
+ 256          
+ 257          u8 i,LED_flag;
+ 258          void main()
+ 259          {
+ 260   1        SYS;
+ 261   1        EA=1;
+ 262   1        Timer1_Init();
+ 263   1      //  EEPROM_W(0x00,14);
+ 264   1        while(1)
+ 265   1        {
+ 266   2      //    if(Time10ms==10){Time10ms=0;EEPROM_R(0x00);}
+ 267   2          
+ 268   2            if(distance_flag==1)
+ 269   2            {
+ 270   3              Time100ms=0;
+ 271   3              old_distance=distance;
+ 272   3              old_distance2[i]=distance;
+ 273   3              if(i++==3)i=0;;
+ 274   3              distance=PACSonic();
+ 275   3              distance_flag=0;
+ 276   3              CL_falg=1;
+ 277   3            }
+ 278   2            if(distance<=CS){DAC(0);}
+ 279   2            if(distance>CS){DAC((distance-CS)*0.02);}
+ 280   2            LED_XS();
+ 281   2            
+ 282   2            
+ 283   2            JM_QH();
+ 284   2      //    if(distance>=0)
+ 285   2      //    {
+ 286   2            
+ 287   2      //      
+ 288   2      //    }
+ 289   2      //    LED_displaybuff(10,10,10,10,10,EEPROM/100,EEPROM/10%10,EEPROM%10);
+ 290   2          
+ 291   2        }
+ 292   1        
+ 293   1        
+ 294   1        
+ 295   1      }
+ 296          
+ 297          u8 l;
+ 298          void Timer1_Isr() interrupt 3
+ 299          {
+ 300   1        if(++l==5){l=0;LED();}
+ 301   1        if(++Time10ms==10)key_disposs();
+C51 COMPILER V9.54   2104010117                                                            06/04/2023 21:52:25 PAGE 6   
+
+ 302   1        ++Time100ms;
+ 303   1        if(++Time1S==1000){Time100ms=0;LED_flag=!LED_flag;}
+ 304   1        LED_display();
+ 305   1        
+ 306   1      }
+ 307          
+ 308          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1556    ----
+   CONSTANT SIZE    =     13    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     39      23
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

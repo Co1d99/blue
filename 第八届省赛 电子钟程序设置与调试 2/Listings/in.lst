@@ -1,0 +1,428 @@
+C51 COMPILER V9.54   IN                                                                    03/28/2023 12:03:08 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE IN
+OBJECT MODULE PLACED IN .\Objects\in.obj
+COMPILER INVOKED BY: F:\kile 5\C51\BIN\C51.EXE in.c OPTIMIZE(8,SPEED) BROWSE INCDIR(.\lib) DEBUG OBJECTEXTEND PRINT(.\Li
+                    -stings\in.lst) TABS(2) OBJECT(.\Objects\in.obj)
+
+line level    source
+
+   1          #include <STC15F2K60S2.H>
+   2          #define __REG52_H__
+   3          #include "ds1302.h"
+   4          #include "onewire.h"
+   5          
+   6          #define YY  P2=(P2&0x1f)
+   7          #define Y4  YY|0x80
+   8          #define Y5  YY|0xa0
+   9          #define Y6  YY|0xc0
+  10          #define Y7  YY|0xe0
+  11          
+  12          typedef unsigned char u8;
+  13          typedef unsigned int  u16;
+  14          
+  15          #define SYS P0=0xff;Y4;YY;P0=0x00;Y5;YY;
+  16          
+  17          u8  JM_flag=0,SJ_flag=0;
+  18          u16 JM_1s,temperature_ms;
+  19          u8 Time1ms,Time10ms;
+  20          code u16 LED_duan[]={0xC0,0xF9,0xA4,0xB0,0x99,0x92,0x82,0xF8,0x80,0x90,0xff,0xbf,0xc6,
+  21                              0xC0&0x7f,0xF9&0x7f,0xA4&0x7f,0xB0&0x7f,0x99&0x7f,0x92&0x7f,0x82&0x7f,
+  22                              0xF8&0x7f,0x80&0x7f,0x90&0x7f,0xff&0x7f,0xbf&0x7f,0xc6&0x7f};
+  23          u8 LED_buff[]={10,10,10,10,10,10,10,10};
+  24          //-----------------------------------------定时器----------------------------------------
+  25          void Timer0_Init(void)
+  26          {
+  27   1        AUXR |= 0x80;
+  28   1        TMOD &= 0xF0;
+  29   1        TL0 = 0x20;
+  30   1        TH0 = 0xD1;
+  31   1        TF0 = 0;
+  32   1        TR0 = 1;
+  33   1        ET0=1;
+  34   1        EA=1;
+  35   1      }
+  36          
+  37          //------------------------------------------数码管----------------------------------------
+  38          void LED_display()
+  39          {
+  40   1        static u8 i;
+  41   1        Y7;P0=0xff;
+  42   1        Y6;P0=0x01<<i;
+  43   1        Y7;P0=LED_duan[LED_buff[i]];
+  44   1        if(++i==8){i=0;};
+  45   1      }
+  46          
+  47          void LED_XSBUFF(u8 d1,d2,d3,d4,d5,d6,d7,d8)
+  48          {
+  49   1          LED_buff[0]=d1;
+  50   1          LED_buff[1]=d2;
+  51   1          LED_buff[2]=d3;
+  52   1          LED_buff[3]=d4;
+  53   1          LED_buff[4]=d5;
+  54   1          LED_buff[5]=d6;
+C51 COMPILER V9.54   IN                                                                    03/28/2023 12:03:08 PAGE 2   
+
+  55   1          LED_buff[6]=d7;
+  56   1          LED_buff[7]=d8;
+  57   1      }
+  58          
+  59          //-----------------------------------------实时时钟------------------------------------------
+  60          code u8 RTC_R[7]={0x81,0x83,0x85,0x87,0x89,0x8b,0x8d};
+  61          code u8 RTC_W[8]={0x80,0x82,0x84,0x86,0x88,0x8a,0x8c,0x8e};
+  62          int RTC_HC[7]={50,59,23,05,11,05,22};
+  63          u8  Clock_HC[8]={0,0,0,0,0,0,0,0};
+  64          void RTC_read()
+  65          {
+  66   1        u8 i,temp;
+  67   1        for(i=0;i<7;i++)
+  68   1        {
+  69   2          temp=Read_Ds1302_Byte(RTC_R[i]);
+  70   2          RTC_HC[i]=temp/16*10+temp%16;
+  71   2        }
+  72   1      }
+  73          
+  74          void RTC_write()
+  75          {
+  76   1        u8 i;
+  77   1        Write_Ds1302_Byte(RTC_W[8],0x00);
+  78   1        for(i=0;i<7;i++)
+  79   1        {
+  80   2          Write_Ds1302_Byte(RTC_W[i],RTC_HC[i]/10*16+RTC_HC[i]%10);
+  81   2        }
+  82   1        Write_Ds1302_Byte(RTC_W[8],0x80);
+  83   1      }
+  84          
+  85          void RTC_byte_write(u8 addr,HC)
+  86          {
+  87   1        Write_Ds1302_Byte(RTC_W[8],0x00);
+  88   1        Write_Ds1302_Byte(RTC_W[addr],RTC_HC[HC]/10*16+RTC_HC[HC]%10);
+  89   1        Write_Ds1302_Byte(RTC_W[8],0x80);
+  90   1      }
+  91          //------------------------------------------温度读取-------------------------------------------
+  92          u16 WD_B=0;
+  93          void DSi8B20_R()
+  94          {
+  95   1        u8  L,H;
+  96   1        u16 TEMP;
+  97   1        init_ds18b20();
+  98   1        Write_DS18B20(0xcc);
+  99   1        Write_DS18B20(0x44);
+ 100   1        
+ 101   1        Delay_OneWire(200);
+ 102   1        
+ 103   1        init_ds18b20();
+ 104   1        Write_DS18B20(0xcc);
+ 105   1        Write_DS18B20(0xbe);
+ 106   1        
+ 107   1        L=Read_DS18B20();
+ 108   1        H=Read_DS18B20();
+ 109   1        
+ 110   1        TEMP=(H&0x0F)<<8;
+ 111   1        TEMP|=L;
+ 112   1        
+ 113   1        WD_B=(TEMP*0.625);
+ 114   1      }
+ 115          
+ 116          //--------------------------------------------按键输入-----------------------------------------
+C51 COMPILER V9.54   IN                                                                    03/28/2023 12:03:08 PAGE 3   
+
+ 117          u8 key_state=0;
+ 118          u8 key_value=0;
+ 119          void key_scan()
+ 120          {
+ 121   1        P3|=0x0f;
+ 122   1        if(~P3&0x0f)
+ 123   1        {
+ 124   2          if(key_state<255)key_state++;
+ 125   2          if(P33==0)key_value=4;
+ 126   2          if(P32==0)key_value=5;
+ 127   2          if(P31==0)key_value=6;
+ 128   2          if(P30==0)key_value=7;
+ 129   2        }
+ 130   1        else
+ 131   1        {
+ 132   2          key_state=0;
+ 133   2          key_value=0;
+ 134   2        }
+ 135   1      }
+ 136          
+ 137          u8 key_ON()
+ 138          {
+ 139   1          P3|=0x0f;
+ 140   1        if(~P3&0x0f)
+ 141   1        {
+ 142   2          if(P33==0){return 8;}
+ 143   2          
+ 144   2        }
+ 145   1        return 0;
+ 146   1      }
+ 147          //--------------------------------------------界面显示---------------------------------------
+ 148          u8 key_RTC_flag,key_flag;//时钟加减标志位//时钟选择标志位
+ 149          u8 key_Clock_flag;
+ 150          u8 temperature,temperature_flag;
+ 151          void RTC_JM_XS()
+ 152          {
+ 153   1        if(temperature==0)
+ 154   1        {
+ 155   2          switch(key_flag)
+ 156   2          {
+ 157   3            case 0:
+ 158   3              temperature_flag=1;
+ 159   3              SJ_flag=1;//时钟暂停标志位
+ 160   3              key_RTC_flag=0;//时钟加减标志位
+ 161   3              LED_XSBUFF(RTC_HC[2]/10,RTC_HC[2]%10,11,RTC_HC[1]/10,RTC_HC[1]%10,11,RTC_HC[0]/10,RTC_HC[0]%10);
+ 162   3              break;
+ 163   3            case 1:
+ 164   3              temperature_flag=0;
+ 165   3              SJ_flag=0;//时钟暂停标志位
+ 166   3              key_RTC_flag=1;//时钟加减标志位
+ 167   3              if(JM_flag==0)
+ 168   3              {
+ 169   4                LED_XSBUFF(RTC_HC[2]/10,RTC_HC[2]%10,11,RTC_HC[1]/10,RTC_HC[1]%10,11,RTC_HC[0]/10,RTC_HC[0]%10);      
+ 170   4              }
+ 171   3              else
+ 172   3              {
+ 173   4                LED_XSBUFF(10,10,11,RTC_HC[1]/10,RTC_HC[1]%10,11,RTC_HC[0]/10,RTC_HC[0]%10);
+ 174   4              }
+ 175   3              break;
+ 176   3            case 2:
+ 177   3              key_RTC_flag=2;//时钟加减标志位
+ 178   3            if(JM_flag==0)
+C51 COMPILER V9.54   IN                                                                    03/28/2023 12:03:08 PAGE 4   
+
+ 179   3              {
+ 180   4                LED_XSBUFF(RTC_HC[2]/10,RTC_HC[2]%10,11,RTC_HC[1]/10,RTC_HC[1]%10,11,RTC_HC[0]/10,RTC_HC[0]%10);      
+ 181   4              }
+ 182   3              else
+ 183   3              {
+ 184   4                LED_XSBUFF(RTC_HC[2]/10,RTC_HC[2]%10,11,10,10,11,RTC_HC[0]/10,RTC_HC[0]%10);
+ 185   4              }
+ 186   3              break;
+ 187   3            case 3:
+ 188   3              key_RTC_flag=3;//时钟加减标志位
+ 189   3            if(JM_flag==0)
+ 190   3              {
+ 191   4                LED_XSBUFF(RTC_HC[2]/10,RTC_HC[2]%10,11,RTC_HC[1]/10,RTC_HC[1]%10,11,RTC_HC[0]/10,RTC_HC[0]%10);
+ 192   4              }
+ 193   3              else
+ 194   3              {
+ 195   4                LED_XSBUFF(RTC_HC[2]/10,RTC_HC[2]%10,11,RTC_HC[1]/10,RTC_HC[1]%10,11,10,10);
+ 196   4              }
+ 197   3              break;
+ 198   3            case 4:
+ 199   3              temperature_flag=0;
+ 200   3              key_Clock_flag=0;
+ 201   3              LED_XSBUFF(Clock_HC[2]/10,Clock_HC[2]%10,11,Clock_HC[1]/10,Clock_HC[1]%10,11,Clock_HC[0]/10,Clock_HC[0
+             -]%10);
+ 202   3              break;
+ 203   3            case 5:
+ 204   3              key_Clock_flag=1;
+ 205   3              if(JM_flag==0)
+ 206   3              {
+ 207   4                LED_XSBUFF(Clock_HC[2]/10,Clock_HC[2]%10,11,Clock_HC[1]/10,Clock_HC[1]%10,11,Clock_HC[0]/10,Clock_HC[
+             -0]%10);
+ 208   4              }
+ 209   3              else
+ 210   3              {
+ 211   4                LED_XSBUFF(10,10,11,Clock_HC[1]/10,Clock_HC[1]%10,11,Clock_HC[0]/10,Clock_HC[0]%10);
+ 212   4              }
+ 213   3              break;
+ 214   3            case 6:
+ 215   3              key_Clock_flag=2;
+ 216   3              if(JM_flag==0)
+ 217   3              {
+ 218   4                LED_XSBUFF(Clock_HC[2]/10,Clock_HC[2]%10,11,Clock_HC[1]/10,Clock_HC[1]%10,11,Clock_HC[0]/10,Clock_HC[
+             -0]%10);
+ 219   4              }
+ 220   3              else
+ 221   3              {
+ 222   4                LED_XSBUFF(Clock_HC[2]/10,Clock_HC[2]%10,11,10,10,11,Clock_HC[0]/10,Clock_HC[0]%10);
+ 223   4              }
+ 224   3              break;
+ 225   3            case 7:
+ 226   3              key_Clock_flag=3;
+ 227   3              if(JM_flag==0)
+ 228   3              {
+ 229   4                LED_XSBUFF(Clock_HC[2]/10,Clock_HC[2]%10,11,Clock_HC[1]/10,Clock_HC[1]%10,11,Clock_HC[0]/10,Clock_HC[
+             -0]%10);
+ 230   4              }
+ 231   3            else
+ 232   3              {
+ 233   4                LED_XSBUFF(Clock_HC[2]/10,Clock_HC[2]%10,11,Clock_HC[1]/10,Clock_HC[1]%10,11,10,10);
+ 234   4              }
+ 235   3            break;  
+ 236   3          }
+C51 COMPILER V9.54   IN                                                                    03/28/2023 12:03:08 PAGE 5   
+
+ 237   2        }else if(temperature==8&&temperature_flag==1)
+ 238   1          {
+ 239   2            LED_XSBUFF(10,10,10,10,10,WD_B/100,(WD_B%100/10)+13,WD_B%10);
+ 240   2          }
+ 241   1      }
+ 242          
+ 243          //----------------------------------------------时钟设置处理----------------------------------------
+             --
+ 244          void key_dispose()
+ 245          {
+ 246   1        if(Time10ms>=10)
+ 247   1            {
+ 248   2              key_scan();
+ 249   2              Time10ms=0;
+ 250   2              if(key_value==7&&key_state==2)//进入时钟设置
+ 251   2              {
+ 252   3                key_flag++;
+ 253   3                if(key_flag>3)key_flag=0;//时钟选择标志位
+ 254   3              }
+ 255   2              else if(key_value==6&&key_state==2)//进入闹钟设置
+ 256   2              {
+ 257   3                if(key_flag<=3)key_flag=3;
+ 258   3                key_flag++;
+ 259   3                if(key_flag>7)key_flag=4;//闹钟选择标志位
+ 260   3              }
+ 261   2              /*---------------------------------时钟加减处理--------------------------------------------*/
+ 262   2              else if(key_value==5&&key_state==2&&SJ_flag==0&&key_RTC_flag==1)//小时加处理
+ 263   2              {
+ 264   3                if(RTC_HC[2]>=23){RTC_HC[2]=0;}
+ 265   3                else {RTC_HC[2]++;}
+ 266   3                RTC_byte_write(2,2);
+ 267   3              }
+ 268   2              else if(key_value==5&&key_state==2&&SJ_flag==0&&key_RTC_flag==2)//分钟加处理
+ 269   2              {
+ 270   3                if(RTC_HC[1]>=59){RTC_HC[1]=0;}
+ 271   3                else {RTC_HC[1]++;}
+ 272   3                RTC_byte_write(1,1);
+ 273   3              }
+ 274   2              else if(key_value==5&&key_state==2&&SJ_flag==0&&key_RTC_flag==3)//秒加处理
+ 275   2              {
+ 276   3                if(RTC_HC[0]>=59){RTC_HC[0]=0;}
+ 277   3                else {RTC_HC[0]++;}
+ 278   3                RTC_byte_write(0,0);
+ 279   3              }
+ 280   2              else if(key_value==4&&key_state==2&&SJ_flag==0&&key_RTC_flag==1)//小时减处理
+ 281   2              {
+ 282   3                if(RTC_HC[2]<=0){RTC_HC[2]=23;}
+ 283   3                else {RTC_HC[2]--;}
+ 284   3                RTC_byte_write(2,2);
+ 285   3              }
+ 286   2              else if(key_value==4&&key_state==2&&SJ_flag==0&&key_RTC_flag==2)//分钟减处理
+ 287   2              {
+ 288   3                if(RTC_HC[1]<=0){RTC_HC[1]=59;}
+ 289   3                else {RTC_HC[1]--;}
+ 290   3                RTC_byte_write(1,1);
+ 291   3              }
+ 292   2              else if(key_value==4&&key_state==2&&SJ_flag==0&&key_RTC_flag==3)//秒减处理
+ 293   2              {
+ 294   3                if(RTC_HC[0]<=0){RTC_HC[0]=59;}
+ 295   3                else {RTC_HC[0]--;}
+ 296   3                RTC_byte_write(0,0);
+ 297   3              }
+C51 COMPILER V9.54   IN                                                                    03/28/2023 12:03:08 PAGE 6   
+
+ 298   2              /*---------------------------------闹钟加减处理--------------------------------------------*/
+ 299   2              else if(key_value==5&&key_state==2&&key_Clock_flag==1)//小时加处理
+ 300   2              {
+ 301   3                if(Clock_HC[2]>=23){Clock_HC[2]=0;}
+ 302   3                else {Clock_HC[2]++;}
+ 303   3              }
+ 304   2              else if(key_value==5&&key_state==2&&key_Clock_flag==2)//分钟加处理
+ 305   2              {
+ 306   3                if(Clock_HC[1]>=59){Clock_HC[1]=0;}
+ 307   3                else {Clock_HC[1]++;}
+ 308   3              }
+ 309   2              else if(key_value==5&&key_state==2&&key_Clock_flag==3)//秒加处理
+ 310   2              {
+ 311   3                if(Clock_HC[0]>=59){Clock_HC[0]=0;}
+ 312   3                else {Clock_HC[0]++;}
+ 313   3              }
+ 314   2              else if(key_value==4&&key_state==2&&key_Clock_flag==1)//小时减处理
+ 315   2              {
+ 316   3                if(Clock_HC[2]<=0){Clock_HC[2]=23;}
+ 317   3                else {Clock_HC[2]--;}
+ 318   3              }
+ 319   2              else if(key_value==4&&key_state==2&&key_Clock_flag==2)//分钟减处理
+ 320   2              {
+ 321   3                if(Clock_HC[1]<=0){Clock_HC[1]=59;}
+ 322   3                else {Clock_HC[1]--;}
+ 323   3              }
+ 324   2              else if(key_value==4&&key_state==2&&key_Clock_flag==3)//秒减处理
+ 325   2              {
+ 326   3                if(Clock_HC[0]<=0){Clock_HC[0]=59;}
+ 327   3                else {Clock_HC[0]--;}
+ 328   3              }
+ 329   2            }
+ 330   1      }
+ 331          
+ 332          u8 Compare;
+ 333          void RTC_Clock_Compare()
+ 334          {
+ 335   1        if((Clock_HC[2]==RTC_HC[2])&&(Clock_HC[1]==RTC_HC[1])&&(Clock_HC[0]==RTC_HC[0]))
+ 336   1        {
+ 337   2          
+ 338   2          Compare=1;
+ 339   2        }
+ 340   1        
+ 341   1      }
+ 342          
+ 343          //-----------------------------------------主函数-----------------------------------------
+ 344          void main()
+ 345          {
+ 346   1        SYS;
+ 347   1        Timer0_Init();
+ 348   1        RTC_write();
+ 349   1        
+ 350   1          while(1)
+ 351   1          {
+ 352   2            key_dispose();
+ 353   2            RTC_JM_XS();
+ 354   2            if(temperature_ms==500){DSi8B20_R();temperature_ms=0;}
+ 355   2            temperature=key_ON();
+ 356   2      
+ 357   2          }
+ 358   1      }
+ 359          
+C51 COMPILER V9.54   IN                                                                    03/28/2023 12:03:08 PAGE 7   
+
+ 360          u8  j=0;
+ 361          u16 k=0,l=0;
+ 362          void Time0_interrupt() interrupt 1
+ 363          {
+ 364   1        Time10ms++;
+ 365   1        temperature_ms++;
+ 366   1        LED_display();
+ 367   1        if(++JM_1s==1000){JM_flag=~JM_flag;JM_1s=0;}
+ 368   1        if(++j==200&&SJ_flag==1){RTC_read();j=0;}
+ 369   1        RTC_Clock_Compare();
+ 370   1        if(Compare==1)
+ 371   1        {
+ 372   2          if(key_value==4|key_value==5|key_value==6|key_value==7)
+ 373   2          {
+ 374   3            Compare=0;
+ 375   3            Y4;P0=0xff;
+ 376   3          }
+ 377   2          k++;
+ 378   2          if(k<=200){Y4;P0=0xfe;}
+ 379   2          if(k>=200){Y4;P0=0xff;}
+ 380   2          if(k==400)k=0;
+ 381   2          if(++l==5000){l=0;Compare=0;}
+ 382   2        }
+ 383   1        
+ 384   1        
+ 385   1        
+ 386   1        
+ 387   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   2583    ----
+   CONSTANT SIZE    =     67    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     54      21
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

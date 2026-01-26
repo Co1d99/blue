@@ -1,0 +1,405 @@
+C51 COMPILER V9.54   IN                                                                    03/31/2023 15:45:43 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE IN
+OBJECT MODULE PLACED IN .\Objects\in.obj
+COMPILER INVOKED BY: F:\kile 5\C51\BIN\C51.EXE in.c OPTIMIZE(8,SPEED) BROWSE INCDIR(.\lib) DEBUG OBJECTEXTEND PRINT(.\Li
+                    -stings\in.lst) TABS(2) OBJECT(.\Objects\in.obj)
+
+line level    source
+
+   1          #include <STC15F2K60S2.H>
+   2          #define __REG52_H__
+   3          #include "iic.h"
+   4          
+   5          #define YY P2=(P2&0x1f)
+   6          #define Y4 YY|0x80
+   7          #define Y5 YY|0xa0
+   8          #define Y6 YY|0xc0
+   9          #define Y7 YY|0xe0
+  10          
+  11          typedef unsigned char u8;
+  12          typedef unsigned int  u16;
+  13          
+  14          #define SYS P0=0xff;Y4;YY;P0=0x00;Y5;YY;
+  15          
+  16          u8 Time_10ms,Time_20ms,Time_1000ms,LED_SS,ADC_flag,tempture,tempture_flag;
+  17          u16 Time;
+  18          u8 LED_LZ[4]={120,120,120,120};
+  19          code u8 LED_duan[]={0xC0,0xF9,0xA4,0xB0,0x99,0x92,0x82,0xF8,0x80,0x90,0xff,0xbf};
+  20          u8 LED_buff[]={10,10,10,10,10,10,10,10};
+  21          //-----------------------定时器初始化----------------------------
+  22          void Timer0_Init(void)    //1毫秒@12.000MHz
+  23          {
+  24   1        AUXR |= 0x80;     //定时器时钟1T模式
+  25   1        TMOD &= 0xF0;     //设置定时器模式
+  26   1        TL0 = 0x20;       //设置定时初始值
+  27   1        TH0 = 0xD1;       //设置定时初始值
+  28   1        TF0 = 0;        //清除TF0标志
+  29   1        TR0 = 1;        //定时器0开始计时
+  30   1        EA=1;
+  31   1        ET0=1;
+  32   1      }
+  33          
+  34          void Timer1_Init(void)    //1微秒@12.000MHz
+  35          {
+  36   1        AUXR |= 0x40;     //定时器时钟1T模式
+  37   1        TMOD &= 0x0F;     //设置定时器模式
+  38   1        TL1 = 0xF4;       //设置定时初始值
+  39   1        TH1 = 0xFF;       //设置定时初始值
+  40   1        TF1 = 0;        //清除TF1标志
+  41   1        TR1 = 1;        //定时器1开始计时
+  42   1        ET1=1;
+  43   1        EA=1;
+  44   1      }
+  45          
+  46          
+  47          //-----------------------数码管显示-----------------------------
+  48          void LED_display()
+  49          {
+  50   1        static u8 i;
+  51   1        P0=0xff;Y7;YY;
+  52   1        P0=0x01<<i;Y6;YY;
+  53   1        P0=LED_duan[LED_buff[i]];Y7;YY;
+  54   1        if(++i==8)i=0;
+C51 COMPILER V9.54   IN                                                                    03/31/2023 15:45:43 PAGE 2   
+
+  55   1      }
+  56          
+  57          void LED_display_buff(u8 d1,d2,d3,d4,d5,d6,d7,d8)
+  58          {
+  59   1        LED_buff[0]=d1;
+  60   1        LED_buff[1]=d2;
+  61   1        LED_buff[2]=d3;
+  62   1        LED_buff[3]=d4;
+  63   1        LED_buff[4]=d5;
+  64   1        LED_buff[5]=d6;
+  65   1        LED_buff[6]=d7;
+  66   1        LED_buff[7]=d8;
+  67   1      }
+  68          //-----------------------------EEPROM初始化--------------------------------
+  69          void EEPROM_R(u8 addr,u8* dat,u8 len) 
+  70          {
+  71   1        IIC_Start();
+  72   1        IIC_SendByte(0xa0);
+  73   1        IIC_WaitAck();
+  74   1        IIC_SendByte(addr);
+  75   1        IIC_WaitAck();
+  76   1      
+  77   1        IIC_Start();
+  78   1        IIC_SendByte(0xa1);
+  79   1        IIC_WaitAck();
+  80   1        while(len--)
+  81   1        {
+  82   2          *dat++=IIC_RecByte();
+  83   2          if(len)IIC_SendAck(0);
+  84   2          else   IIC_SendAck(1);
+  85   2        }
+  86   1        IIC_Stop();
+  87   1      }
+  88          
+  89          void EEPROM_W(u8 addr,u8* dat,u8 len)
+  90          {
+  91   1        IIC_Start();
+  92   1        IIC_SendByte(0xa0);
+  93   1        IIC_WaitAck();
+  94   1        IIC_SendByte(addr);
+  95   1        IIC_WaitAck();
+  96   1        while(len--)
+  97   1        {
+  98   2          IIC_SendByte(*dat++);
+  99   2          IIC_WaitAck();
+ 100   2          IIC_Delay(200); 
+ 101   2        }
+ 102   1        IIC_Stop();
+ 103   1      }
+ 104          //----------------------------------ADC--------------------------------------
+ 105          u8 ADC;
+ 106          void ADC_R(u8 channle)
+ 107          {
+ 108   1        IIC_Start();
+ 109   1        IIC_SendByte(0x90); 
+ 110   1        IIC_WaitAck();
+ 111   1        
+ 112   1        IIC_SendByte(channle); 
+ 113   1        IIC_WaitAck();
+ 114   1        
+ 115   1        IIC_Start();
+ 116   1        
+C51 COMPILER V9.54   IN                                                                    03/31/2023 15:45:43 PAGE 3   
+
+ 117   1        IIC_SendByte(0x91); 
+ 118   1        IIC_WaitAck();
+ 119   1        
+ 120   1        ADC = IIC_RecByte();
+ 121   1        IIC_SendAck(1);
+ 122   1        
+ 123   1        IIC_Stop();
+ 124   1      }
+ 125          
+ 126          void DAC_W(u8 addr)
+ 127          {
+ 128   1        IIC_Start();
+ 129   1        IIC_SendByte(0x90);
+ 130   1        IIC_WaitAck();
+ 131   1        
+ 132   1        IIC_SendByte(0x40);
+ 133   1        IIC_WaitAck();
+ 134   1        
+ 135   1        IIC_SendByte(addr);
+ 136   1        IIC_WaitAck();
+ 137   1        
+ 138   1        IIC_Stop();
+ 139   1      }
+ 140          //---------------------------------独立按键---------------------------------
+ 141          u8 key_value=0;
+ 142          u8 key_state=0;
+ 143          u8 LZJG_yx_flag;
+ 144          void key_scan()
+ 145          {
+ 146   1        P3|=0x0f;
+ 147   1        if(~P3&0x0f)
+ 148   1        {
+ 149   2          if(key_state<255)key_state++;
+ 150   2          if(P33==0)key_value=4;
+ 151   2          if(P32==0)key_value=5;
+ 152   2          if(P31==0)key_value=6;  
+ 153   2          if(P30==0)key_value=7;
+ 154   2        }
+ 155   1        else
+ 156   1        {
+ 157   2          key_value=0;
+ 158   2          key_state=0;
+ 159   2        }
+ 160   1      }
+ 161          
+ 162          
+ 163          //------------------------------LED-----------------------------------
+ 164          bit LED_TZ=0;
+ 165          u8 i,LED_KZ,LEDXS=0xff;
+ 166          u16 LED_JS;
+ 167          void LED(){P0=LEDXS;Y4;YY;}
+ 168          
+ 169          void LED_QH()
+ 170          {
+ 171   1          switch(LED_KZ)
+ 172   1          {
+ 173   2            case 0:
+ 174   2            if(LED_JS>=LED_LZ[0])
+ 175   2            {
+ 176   3              LEDXS=~(0x01<<i);
+ 177   3              if(++i==8){i=0;LED_KZ=1;}
+ 178   3              LED_JS=0;
+C51 COMPILER V9.54   IN                                                                    03/31/2023 15:45:43 PAGE 4   
+
+ 179   3            }
+ 180   2            break;    
+ 181   2            case 1:
+ 182   2              if(LED_JS>=LED_LZ[1])
+ 183   2            {
+ 184   3              LEDXS=~(0x80>>i);
+ 185   3              if(++i==8){i=0;LED_KZ=2;}
+ 186   3              LED_JS=0;
+ 187   3            }
+ 188   2            break;  
+ 189   2            case 2:
+ 190   2              if(LED_JS>=LED_LZ[2])
+ 191   2            {
+ 192   3              if(i == 0)LEDXS = ~0X81;
+ 193   3              if(i == 1)LEDXS = ~0X42;
+ 194   3              if(i == 2)LEDXS = ~0X24;
+ 195   3              if(i == 3)LEDXS = ~0X18;   
+ 196   3              if(++i==4){i=0;LED_KZ=3;}
+ 197   3              LED_JS=0; 
+ 198   3            }
+ 199   2            break;  
+ 200   2            case 3:
+ 201   2              if(LED_JS>=LED_LZ[3])
+ 202   2            {
+ 203   3              if(i == 3)LEDXS = ~0X81;
+ 204   3              if(i == 2)LEDXS = ~0X42;
+ 205   3              if(i == 1)LEDXS = ~0X24;
+ 206   3              if(i == 0)LEDXS = ~0X18;   
+ 207   3              if(++i==4){i=0;LED_KZ=0;}
+ 208   3              LED_JS=0; 
+ 209   3            }
+ 210   2            break;
+ 211   2          }
+ 212   1      }
+ 213          //-----------------------------LED流转间隔-----------------------------
+ 214          u8 LZJG_flag,LZJG_LZ_flag,LZJG_LZ;
+ 215          u8 LZJG_yx=1;
+ 216          void LED_LZJG()
+ 217          {
+ 218   1        if(tempture==0)
+ 219   1        {
+ 220   2          switch(LZJG_flag)
+ 221   2          {
+ 222   3            case 0:
+ 223   3              LZJG_LZ_flag=1;
+ 224   3            tempture_flag=0;
+ 225   3              LED_display_buff(11,LZJG_yx,11,10,LED_LZ[LZJG_yx-1]/100,LED_LZ[LZJG_yx-1]%100/10,LED_LZ[LZJG_yx-1]%10,
+             -0);
+ 226   3          //      LED_display_buff(10,10,10,10,10,10,10,10);
+ 227   3            break;
+ 228   3            case 1:
+ 229   3              LZJG_yx_flag=1;
+ 230   3              LZJG_LZ_flag=1;
+ 231   3              tempture_flag=1;
+ 232   3              if(LED_SS==0)
+ 233   3              {
+ 234   4                LED_display_buff(11,LZJG_yx,11,10,LED_LZ[LZJG_yx-1]/100,LED_LZ[LZJG_yx-1]%100/10,LED_LZ[LZJG_yx-1]%10
+             -,0);
+ 235   4              }
+ 236   3              else
+ 237   3              {
+ 238   4                LED_display_buff(10,10,10,10,LED_LZ[LZJG_yx-1]/100,LED_LZ[LZJG_yx-1]%100/10,LED_LZ[LZJG_yx-1]%10,0);
+C51 COMPILER V9.54   IN                                                                    03/31/2023 15:45:43 PAGE 5   
+
+ 239   4              }
+ 240   3            break;
+ 241   3            case 2:
+ 242   3              LZJG_yx_flag=0;
+ 243   3              LZJG_LZ_flag=0;
+ 244   3              if(LED_SS==0)
+ 245   3              {
+ 246   4                LED_display_buff(11,LZJG_yx,11,10,LED_LZ[LZJG_yx-1]/100,LED_LZ[LZJG_yx-1]%100/10,LED_LZ[LZJG_yx-1]%10
+             -,0);
+ 247   4              }
+ 248   3              else
+ 249   3              {
+ 250   4                LED_display_buff(11,LZJG_yx,11,10,10,10,10,10);
+ 251   4              }
+ 252   3            break;
+ 253   3          }
+ 254   2        }
+ 255   1        else
+ 256   1        {
+ 257   2          if(tempture==3&&tempture_flag==0)
+ 258   2          {
+ 259   3            if(ADC<63){LED_display_buff(10,10,10,10,10,10,11,1);}
+ 260   3            if(63<ADC&&ADC<=127){LED_display_buff(10,10,10,10,10,10,11,2);}
+ 261   3            if(127<ADC&&ADC<=191){LED_display_buff(10,10,10,10,10,10,11,3);}
+ 262   3            if(191<ADC&&ADC<=255){LED_display_buff(10,10,10,10,10,10,11,4);}
+ 263   3          }
+ 264   2        }
+ 265   1      }
+ 266          //-------------------------------------------------按键处理-------------------------------------------
+             ----
+ 267          void key_dispose()
+ 268          {
+ 269   1        if(Time_10ms>=10)
+ 270   1          {
+ 271   2            Time_10ms=0;
+ 272   2            key_scan();
+ 273   2            //流水灯暂停
+ 274   2            if(key_value==7&&key_state==2)
+ 275   2            {
+ 276   3              LED_TZ=~LED_TZ;
+ 277   3              if(!LED_TZ)LEDXS=0xff;
+ 278   3            }
+ 279   2            //按键处理
+ 280   2            if(key_value==6&&key_state==2)
+ 281   2            {
+ 282   3              LZJG_flag++;
+ 283   3              if(LZJG_flag>=3)LZJG_flag=0;
+ 284   3            }
+ 285   2            //运行加减处理
+ 286   2            if(key_value==5&&key_state==2&&LZJG_yx_flag==1)
+ 287   2            {
+ 288   3              LZJG_yx++;
+ 289   3              if(LZJG_yx>4)LZJG_yx=1;
+ 290   3            }else if(key_value==4&&key_state==2&&LZJG_yx_flag==1)
+ 291   2            {
+ 292   3              LZJG_yx--;
+ 293   3              if(LZJG_yx<=0)LZJG_yx=4;
+ 294   3            }
+ 295   2            //流转间隔加减处理
+ 296   2            if(key_value==5&&key_state==2&&LZJG_LZ_flag==0)
+ 297   2            {
+ 298   3              if(LZJG_yx==1){if(LED_LZ[0]>=120){LED_LZ[0]=40;}else LED_LZ[0]+=10;}
+C51 COMPILER V9.54   IN                                                                    03/31/2023 15:45:43 PAGE 6   
+
+ 299   3              if(LZJG_yx==2){if(LED_LZ[1]>=120){LED_LZ[1]=40;}else LED_LZ[1]+=10;}
+ 300   3              if(LZJG_yx==3){if(LED_LZ[2]>=120){LED_LZ[2]=40;}else LED_LZ[2]+=10;}
+ 301   3              if(LZJG_yx==4){if(LED_LZ[3]>=120){LED_LZ[3]=40;}else LED_LZ[3]+=10;}
+ 302   3              EEPROM_W(0x00,LED_LZ,4);  
+ 303   3            }else if(key_value==4&&key_state==2&&LZJG_LZ_flag==0)
+ 304   2            {
+ 305   3              if(LZJG_yx==1){if(LED_LZ[0]<=40){LED_LZ[0]=120;}else LED_LZ[0]-=10;}
+ 306   3              if(LZJG_yx==2){if(LED_LZ[1]<=40){LED_LZ[1]=120;}else LED_LZ[1]-=10;}
+ 307   3              if(LZJG_yx==3){if(LED_LZ[2]<=40){LED_LZ[2]=120;}else LED_LZ[2]-=10;}
+ 308   3              if(LZJG_yx==4){if(LED_LZ[3]<=40){LED_LZ[3]=120;}else LED_LZ[3]-=10;}
+ 309   3              EEPROM_W(0x00,LED_LZ,4);
+ 310   3            }
+ 311   2          }
+ 312   1      }
+ 313          
+ 314          u8 key_ON()
+ 315          {
+ 316   1          P3|=0x0f;
+ 317   1        if(~P3&0x0f)
+ 318   1        {
+ 319   2          if(P33==0){return 3;}
+ 320   2        }
+ 321   1        return 0;
+ 322   1      }
+ 323          //------------------------------主函数------------------------------
+ 324          void main()
+ 325          {
+ 326   1        SYS;
+ 327   1        Timer0_Init();
+ 328   1        Timer1_Init();
+ 329   1        EEPROM_R(0x00,LED_LZ,4);
+ 330   1        while(1)
+ 331   1        {
+ 332   2          tempture=key_ON();
+ 333   2          if(ADC_flag==0){ADC_R(0x03);ADC_flag=1;EA=1;}
+ 334   2          LED_QH();
+ 335   2          LED_LZJG();
+ 336   2          key_dispose();
+ 337   2      //    ADC_R(0x03);
+ 338   2      //    LED_display_buff(ADC/100,ADC%100/10,ADC%10,10,10,10,10,10);
+ 339   2      
+ 340   2        }
+ 341   1      }
+ 342          //-----------------------------定时器中断----------------------------
+ 343          u8 j,k;
+ 344          void Time0_interrupt() interrupt 1
+ 345          {
+ 346   1        Time_10ms++;
+ 347   1        if(++Time==800){LED_SS=!LED_SS;Time=0;}
+ 348   1        if(LED_TZ==1&&Time_1000ms%10==0)LED_JS++;
+ 349   1        if(Time_1000ms++==1000){Time_1000ms=0;}
+ 350   1        if(++k==10){ADC_flag=0;k=0;EA=0;}
+ 351   1        LED_display();
+ 352   1      }
+ 353          
+ 354          void Time1_interrupt() interrupt 3
+ 355          {
+ 356   1        j=++j%255;
+ 357   1        if(ADC>=j)
+ 358   1        {
+ 359   2          LED();
+ 360   2        }
+C51 COMPILER V9.54   IN                                                                    03/31/2023 15:45:43 PAGE 7   
+
+ 361   1        else 
+ 362   1        { 
+ 363   2          P0 = 0XFF;Y4;YY;
+ 364   2        }
+ 365   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1785    ----
+   CONSTANT SIZE    =     12    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     37      27
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
